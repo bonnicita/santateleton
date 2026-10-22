@@ -124,7 +124,7 @@ input,select,textarea,button{font-family:inherit}
 ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:rgba(160,200,240,.25);border-radius:8px}::-webkit-scrollbar-track{background:transparent}
 
 /* solo-lectura: quien no es editora no ve los botones de edición */
-body:not(.edit) #btnAdd,body:not(.edit) #btnCats,body:not(.edit) #btnExport,body:not(.edit) #btnImport{display:none}
+body:not(.edit) #btnAdd,body:not(.edit) #btnCats,body:not(.edit) #btnExport,body:not(.edit) #btnShare,body:not(.edit) #btnReload,body:not(.edit) #btnImport{display:none}
 
 /* cristal oscuro */
 .side,.panel,.warn,.toast{background:var(--glass);-webkit-backdrop-filter:blur(18px) saturate(150%);backdrop-filter:blur(18px) saturate(150%);border:var(--glass-b);border-radius:var(--r);box-shadow:var(--shadow);color:var(--tx)}
@@ -229,6 +229,8 @@ select option{background:#0f1c2e;color:var(--ink)}
   <button class="btn" id="btnCats">Categorías</button>
   <button class="btn" id="btnList">Lista</button>
   <button class="btn" id="btnExport">Exportar</button>
+  <button class="btn" id="btnShare">Descargar página</button>
+  <button class="btn" id="btnReload">Traer publicados</button>
   <button class="btn" id="btnImport">Importar</button>
   <input type="file" id="fileImport" accept="application/json" hidden>
 </div>
@@ -270,7 +272,9 @@ select option{background:#0f1c2e;color:var(--ink)}
 <div class="viewer" id="viewer"><img alt=""></div>
 <div class="toast" id="toast"></div>
 
+<script id="datos-embebidos" type="application/json"></script>
 <script>
+const PAGE_SRC = document.documentElement.outerHTML; // copia limpia de la página, para poder descargarla con los puntos dentro
 /* ===== Mapa base (mismo sistema de coordenadas y tiles) ===== */
 const HOST = "https://api.spaceturtl.us";
 const center_x = 42.38, center_y = 81.74, scale_x = 0.00534, scale_y = 0.00534;
@@ -351,16 +355,20 @@ function syncMarkers() {
 /* ===== Carga de datos: puntos.json (publicado en GitHub) ===== */
 async function loadData() {
   let base = null;
-  try {
-    const r = await fetch("puntos.json?v=" + Date.now(), { cache: "no-store" });
-    if (r.ok) base = await r.json();
-  } catch (e) {}
+  try { const t = $("datos-embebidos").textContent.trim(); if (t) base = JSON.parse(t); } catch (e) {}
+  if (!base) {
+    try {
+      const r = await fetch("puntos.json?v=" + Date.now(), { cache: "no-store" });
+      if (r.ok) base = await r.json();
+    } catch (e) {}
+  }
   let pts = null, cs = null;
   if (EDIT) { // la editora trabaja sobre su borrador local, si existe
     try { pts = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
     try { cs = JSON.parse(localStorage.getItem(CKEY)); } catch (e) {}
   }
-  if (!Array.isArray(pts)) pts = Array.isArray(base) ? base : (base && Array.isArray(base.points) ? base.points : []);
+  const basePts = Array.isArray(base) ? base : (base && Array.isArray(base.points) ? base.points : []);
+  if (!Array.isArray(pts) || (!pts.length && basePts.length)) pts = basePts;
   if (!Array.isArray(cs)) cs = base && Array.isArray(base.categories) ? base.categories : null;
   points = pts;
   if (Array.isArray(cs)) cats = cs;
@@ -556,6 +564,21 @@ $("btnExport").onclick = () => {
   a.href = URL.createObjectURL(new Blob([JSON.stringify({ version: 2, categories: cats, points: clean })], { type: "application/json" }));
   a.download = "puntos.json"; a.click(); URL.revokeObjectURL(a.href);
   toast("Descargado puntos.json: súbelo a GitHub (reemplaza el anterior) para publicarlo");
+};
+$("btnShare").onclick = () => {
+  const clean = points.map(({ _tmp, ...p }) => p);
+  const doc = new DOMParser().parseFromString(PAGE_SRC, "text/html");
+  doc.getElementById("datos-embebidos").textContent = JSON.stringify({ version: 2, categories: cats, points: clean }).replace(/</g, "\\u003c");
+  const html = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  a.download = "santa-teleton-13.html"; a.click(); URL.revokeObjectURL(a.href);
+  toast("Descargado santa-teleton-13.html: ese archivo ya trae tus puntos dentro");
+};
+$("btnReload").onclick = () => {
+  if (!confirm("Esto borra lo que tienes guardado en este navegador y carga los puntos publicados (puntos.json). ¿Continuar?")) return;
+  try { localStorage.removeItem(KEY); localStorage.removeItem(CKEY); } catch (e) {}
+  location.reload();
 };
 $("btnImport").onclick = () => $("fileImport").click();
 $("fileImport").onchange = async e => {
