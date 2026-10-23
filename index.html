@@ -77,6 +77,11 @@ body.adding #map{cursor:crosshair}
 .warn p{margin:0 0 10px;color:var(--mut)}
 /* buscador */
 .filters{padding:8px 8px 6px;display:grid;gap:6px;border-bottom:1px solid var(--line)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;max-height:104px;overflow:auto}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--tx);background:rgba(6,13,24,.7);border:1px solid rgba(160,200,240,.22);transition:border-color .15s,background .15s,transform .15s}
+.chip:hover{border-color:#4a9be8;transform:translateY(-1px)}
+.chip.on{color:#fff;background:linear-gradient(135deg,#5fb2f5,#2f7fd1 60%,#1d5f9e);border-color:rgba(255,255,255,.28);box-shadow:0 4px 12px rgba(47,127,209,.35)}
+.chip .dot{width:10px;height:10px;flex:none}
 .filters input,.filters select{width:100%;background:#091a2f;color:var(--tx);border:1px solid var(--line);border-radius:5px;padding:6px 8px;font:inherit}
 /* bloqueo */
 .lock{position:fixed;inset:0;z-index:6000;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px}
@@ -253,7 +258,7 @@ select option{background:#0f1c2e;color:var(--ink)}
   <h2>Puntos <span id="count" style="color:var(--mut);font-weight:400"></span></h2>
   <div class="filters">
     <input type="search" id="q" placeholder="Buscar…" aria-label="Buscar">
-    <select id="qCat" aria-label="Filtrar por categoría"><option value="*">Todas las categorías</option></select>
+    <div id="qCat" class="chips" aria-label="Filtrar por categoría"></div>
   </div>
   <div class="list" id="list"></div>
 </aside>
@@ -337,10 +342,11 @@ function refreshMarkers() {
   syncMarkers();
 }
 /* Un punto se ve en el mapa si su categoría no está oculta y coincide con el filtro de categoría */
+const catSel = new Set(); // categorías marcadas en el filtro ("" = sin categoría); vacío = todas
+const catPass = p => !catSel.size || catSel.has(p.cat || "");
 function markerVisible(p) {
   if (catOf(p)?.hidden) return false;
-  const cf = $("qCat").value;
-  return cf === "*" || (p.cat || "") === cf;
+  return catPass(p);
 }
 function syncMarkers() {
   points.forEach(p => {
@@ -514,7 +520,7 @@ addEventListener("keydown", e => { if (e.key === "Escape") { setAdding(false); $
 map.on("click", e => {
   if (!adding) return;
   setAdding(false);
-  if ($("qCat").value !== "*") { $("qCat").value = "*"; syncMarkers(); }
+  if (catSel.size) { catSel.clear(); updateCatFilter(); syncMarkers(); }
   const p = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), lat: e.latlng.lat, lng: e.latlng.lng, title: "", desc: "", cat: null, images: [] };
   points.push(p); save(); addMarker(p); renderList();
   const m = markers[p.id];
@@ -526,19 +532,26 @@ map.on("click", e => {
 const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 function matches(p) {
   if (catOf(p)?.hidden) return false;
-  const cf = $("qCat").value;
-  if (cf !== "*" && (p.cat || "") !== cf) return false;
+  if (!catPass(p)) return false;
   const q = norm($("q").value.trim()); if (!q) return true;
   const f = { title: p.title, desc: p.desc, cat: catOf(p)?.name || "Sin categoría" };
   return [f.title, f.desc, f.cat].some(v => norm(v).includes(q));
 }
 $("q").addEventListener("input", () => renderList());
-$("qCat").addEventListener("change", syncMarkers);
+$("qCat").addEventListener("click", e => {
+  const b = e.target.closest(".chip"); if (!b) return;
+  const id = b.dataset.id;
+  if (id === "*") catSel.clear(); else if (catSel.has(id)) catSel.delete(id); else catSel.add(id);
+  updateCatFilter(); syncMarkers();
+});
 function updateCatFilter() {
-  const sel = $("qCat"), prev = sel.value;
-  sel.innerHTML = '<option value="*">Todas las categorías</option><option value="">Sin categoría</option>' + cats.map(c => `<option value="${esc(c.id)}">${esc(c.name) || "Sin nombre"}</option>`).join("");
-  sel.value = [...sel.options].some(o => o.value === prev) ? prev : "*";
-  if (sel.value !== prev && started) syncMarkers();
+  const ids = new Set(["", ...cats.map(c => c.id)]);
+  let changed = false;
+  [...catSel].forEach(id => { if (!ids.has(id)) { catSel.delete(id); changed = true; } });
+  const chip = (id, label, color) => `<button type="button" class="chip${catSel.has(id) ? " on" : ""}" data-id="${esc(id)}"><i class="dot" style="--c:${color}"></i>${esc(label)}</button>`;
+  $("qCat").innerHTML = `<button type="button" class="chip${catSel.size ? "" : " on"}" data-id="*">Todas</button>` +
+    chip("", "Sin categoría", NO_COLOR) + cats.map(c => chip(c.id, c.name || "Sin nombre", c.color)).join("");
+  if (changed && started) syncMarkers();
 }
 function renderList() {
   const vis = points.filter(p => !catOf(p)?.hidden);
