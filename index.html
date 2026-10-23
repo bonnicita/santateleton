@@ -77,11 +77,19 @@ body.adding #map{cursor:crosshair}
 .warn p{margin:0 0 10px;color:var(--mut)}
 /* buscador */
 .filters{padding:8px 8px 6px;display:grid;gap:6px;border-bottom:1px solid var(--line)}
-.chips{display:flex;flex-wrap:wrap;gap:6px;max-height:104px;overflow:auto}
-.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--tx);background:rgba(6,13,24,.7);border:1px solid rgba(160,200,240,.22);transition:border-color .15s,background .15s,transform .15s}
-.chip:hover{border-color:#4a9be8;transform:translateY(-1px)}
-.chip.on{color:#fff;background:linear-gradient(135deg,#5fb2f5,#2f7fd1 60%,#1d5f9e);border-color:rgba(255,255,255,.28);box-shadow:0 4px 12px rgba(47,127,209,.35)}
-.chip .dot{width:10px;height:10px;flex:none}
+.dd{position:relative}
+.dd-btn{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;cursor:pointer;font:inherit;color:var(--ink);background:rgba(6,13,24,.7);border:1px solid rgba(160,200,240,.2);border-radius:12px;padding:8px 12px;box-shadow:inset 0 1px 3px rgba(0,0,0,.4);transition:border-color .15s,box-shadow .15s}
+.dd-btn:hover,.dd.open .dd-btn{border-color:#4a9be8}
+.dd.open .dd-btn{box-shadow:0 0 0 4px rgba(74,155,232,.22)}
+.dd-arrow{width:8px;height:8px;flex:none;border-right:2px solid var(--mut);border-bottom:2px solid var(--mut);transform:rotate(45deg) translateY(-2px);transition:transform .2s}
+.dd.open .dd-arrow{transform:rotate(-135deg) translate(-2px,-1px)}
+.dd-menu{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:30;max-height:260px;overflow:auto;padding:6px;background:#0f1c2e;border:1px solid rgba(160,200,240,.22);border-radius:14px;box-shadow:0 14px 34px rgba(0,0,0,.6)}
+.dd.open .dd-menu{display:block;animation:fadeUp .15s}
+.dd-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:9px;cursor:pointer;color:var(--tx);font-size:13.5px;user-select:none}
+.dd-item:hover{background:rgba(255,255,255,.07)}
+.filters .dd-item input{accent-color:#4a9be8;width:16px;height:16px;padding:0;margin:0;flex:none;cursor:pointer;background:none;border:none;border-radius:0;box-shadow:none}
+.dd-item .dot{width:10px;height:10px;flex:none}
+.dd-sep{height:1px;background:var(--line);margin:4px 2px}
 .filters input,.filters select{width:100%;background:#091a2f;color:var(--tx);border:1px solid var(--line);border-radius:5px;padding:6px 8px;font:inherit}
 /* bloqueo */
 .lock{position:fixed;inset:0;z-index:6000;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px}
@@ -258,7 +266,10 @@ select option{background:#0f1c2e;color:var(--ink)}
   <h2>Puntos <span id="count" style="color:var(--mut);font-weight:400"></span></h2>
   <div class="filters">
     <input type="search" id="q" placeholder="Buscar…" aria-label="Buscar">
-    <div id="qCat" class="chips" aria-label="Filtrar por categoría"></div>
+    <div class="dd" id="qCat">
+      <button type="button" class="dd-btn" id="ddBtn" aria-haspopup="true" aria-expanded="false"><span id="ddLabel">Todas las categorías</span><i class="dd-arrow"></i></button>
+      <div class="dd-menu" id="ddMenu"></div>
+    </div>
   </div>
   <div class="list" id="list"></div>
 </aside>
@@ -538,19 +549,26 @@ function matches(p) {
   return [f.title, f.desc, f.cat].some(v => norm(v).includes(q));
 }
 $("q").addEventListener("input", () => renderList());
-$("qCat").addEventListener("click", e => {
-  const b = e.target.closest(".chip"); if (!b) return;
-  const id = b.dataset.id;
-  if (id === "*") catSel.clear(); else if (catSel.has(id)) catSel.delete(id); else catSel.add(id);
+$("ddBtn").onclick = () => { const o = $("qCat").classList.toggle("open"); $("ddBtn").setAttribute("aria-expanded", o); };
+addEventListener("click", e => { if (!e.target.closest("#qCat")) closeDD(); });
+addEventListener("keydown", e => { if (e.key === "Escape") closeDD(); });
+function closeDD() { $("qCat").classList.remove("open"); $("ddBtn").setAttribute("aria-expanded", "false"); }
+$("ddMenu").addEventListener("change", e => {
+  const id = e.target.dataset.id; if (id === undefined) return;
+  if (id === "*") catSel.clear(); else if (e.target.checked) catSel.add(id); else catSel.delete(id);
   updateCatFilter(); syncMarkers();
 });
 function updateCatFilter() {
   const ids = new Set(["", ...cats.map(c => c.id)]);
   let changed = false;
   [...catSel].forEach(id => { if (!ids.has(id)) { catSel.delete(id); changed = true; } });
-  const chip = (id, label, color) => `<button type="button" class="chip${catSel.has(id) ? " on" : ""}" data-id="${esc(id)}"><i class="dot" style="--c:${color}"></i>${esc(label)}</button>`;
-  $("qCat").innerHTML = `<button type="button" class="chip${catSel.size ? "" : " on"}" data-id="*">Todas</button>` +
-    chip("", "Sin categoría", NO_COLOR) + cats.map(c => chip(c.id, c.name || "Sin nombre", c.color)).join("");
+  const row = (id, label, color) => `<label class="dd-item"><input type="checkbox" data-id="${esc(id)}"${catSel.has(id) ? " checked" : ""}><i class="dot" style="--c:${color}"></i><span>${esc(label)}</span></label>`;
+  const menu = $("ddMenu"), st = menu.scrollTop;
+  menu.innerHTML = `<label class="dd-item"><input type="checkbox" data-id="*"${catSel.size ? "" : " checked"}><span>Todas las categorías</span></label><div class="dd-sep"></div>` +
+    row("", "Sin categoría", NO_COLOR) + cats.map(c => row(c.id, c.name || "Sin nombre", c.color)).join("");
+  menu.scrollTop = st;
+  const names = [...catSel].map(id => id === "" ? "Sin categoría" : (cats.find(c => c.id === id)?.name || "Sin nombre"));
+  $("ddLabel").textContent = !names.length ? "Todas las categorías" : names.length === 1 ? names[0] : names.length + " categorías";
   if (changed && started) syncMarkers();
 }
 function renderList() {
