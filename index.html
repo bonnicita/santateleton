@@ -89,6 +89,12 @@ body.adding #map{cursor:crosshair}
 .dd-item:hover{background:rgba(255,255,255,.07)}
 .filters .dd-item input{accent-color:#4a9be8;width:16px;height:16px;padding:0;margin:0;flex:none;cursor:pointer;background:none;border:none;border-radius:0;box-shadow:none}
 .dd-item .dot{width:10px;height:10px;flex:none}
+.dd-menu{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+@media(max-width:700px){
+  /* en el celular el panel es bajito: al abrir la lista de categorías se agranda para que quepan todas */
+  .side.ddopen{height:70%}
+  .dd-menu{max-height:calc(70vh - 215px);max-height:calc(70dvh - 215px)}
+}
 .dd-sep{height:1px;background:var(--line);margin:4px 2px}
 .filters input,.filters select{width:100%;background:#091a2f;color:var(--tx);border:1px solid var(--line);border-radius:5px;padding:6px 8px;font:inherit}
 /* bloqueo */
@@ -167,6 +173,15 @@ input[type=text]:focus,input[type=search]:focus,input[type=password]:focus,selec
 input::placeholder,textarea::placeholder{color:#6f87a3}
 select option{background:#0f1c2e;color:var(--ink)}
 .catrow input[type=color]{border:2px solid rgba(160,200,240,.35);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+.catrow .grip{flex:none;width:28px;height:30px;display:grid;place-items:center;cursor:grab;color:var(--mut);border-radius:8px;touch-action:none;user-select:none;-webkit-user-select:none}
+.catrow .grip::before{content:"";width:14px;height:7px;border-top:2px solid currentColor;border-bottom:2px solid currentColor}
+.catrow .grip:hover{background:rgba(255,255,255,.08);color:var(--ink)}
+.catrow.dragging{background:rgba(74,155,232,.2);border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.5);position:relative;z-index:2}
+.catrow.dragging .grip{cursor:grabbing}
+/* barra de botones: más compacta y sin pisar el panel de puntos */
+.bar .btn{padding:8px 14px;font-size:13px}
+@media(min-width:701px){.bar{max-width:calc(100% - 56px - 276px)}}
+body.edit .panel{top:104px;max-height:calc(100% - 128px)}
 .catrow .cx{color:var(--red)}.catrow .cx:hover{background:rgba(255,93,108,.14)}
 
 /* lista lateral */
@@ -549,10 +564,10 @@ function matches(p) {
   return [f.title, f.desc, f.cat].some(v => norm(v).includes(q));
 }
 $("q").addEventListener("input", () => renderList());
-$("ddBtn").onclick = () => { const o = $("qCat").classList.toggle("open"); $("ddBtn").setAttribute("aria-expanded", o); };
+$("ddBtn").onclick = () => { const o = $("qCat").classList.toggle("open"); $("ddBtn").setAttribute("aria-expanded", o); $("side").classList.toggle("ddopen", o); };
 addEventListener("click", e => { if (!e.target.closest("#qCat")) closeDD(); });
 addEventListener("keydown", e => { if (e.key === "Escape") closeDD(); });
-function closeDD() { $("qCat").classList.remove("open"); $("ddBtn").setAttribute("aria-expanded", "false"); }
+function closeDD() { $("qCat").classList.remove("open"); $("ddBtn").setAttribute("aria-expanded", "false"); $("side").classList.remove("ddopen"); }
 $("ddMenu").addEventListener("change", e => {
   const id = e.target.dataset.id; if (id === undefined) return;
   if (id === "*") catSel.clear(); else if (e.target.checked) catSel.add(id); else catSel.delete(id);
@@ -676,6 +691,7 @@ function renderCats() {
     <input type="checkbox" data-f="vis" title="Mostrar en el mapa" ${c.hidden ? "" : "checked"}>
     <input type="color" data-f="color" value="${c.color}" title="Color">
     <input type="text" data-f="name" value="${esc(c.name)}" placeholder="Nombre" maxlength="40">
+    <span class="grip" data-f="grip" title="Arrastra para cambiar de lugar"></span>
     <button class="cx" data-f="del" title="Eliminar categoría">×</button></div>`).join("")
     : '<p>No hay categorías. Pulsa «Nueva categoría».</p>';
   updateCatFilter();
@@ -693,6 +709,31 @@ $("catAdd").onclick = () => {
   saveCats(); renderCats();
   const inp = $("catList").querySelector(".catrow:last-child [data-f=name]"); inp.focus(); inp.select();
 };
+(() => {
+  const list = $("catList"); let drag = null;
+  list.addEventListener("pointerdown", e => {
+    const g = e.target.closest(".grip"); if (!g) return;
+    e.preventDefault();
+    drag = g.closest(".catrow");
+    list.setPointerCapture(e.pointerId);
+    drag.classList.add("dragging");
+  });
+  list.addEventListener("pointermove", e => {
+    if (!drag) return;
+    const rows = [...list.querySelectorAll(".catrow")].filter(r => r !== drag);
+    const next = rows.find(r => { const b = r.getBoundingClientRect(); return e.clientY < b.top + b.height / 2; });
+    if (next) { if (drag.nextElementSibling !== next) list.insertBefore(drag, next); }
+    else if (list.lastElementChild !== drag) list.appendChild(drag);
+  });
+  const end = () => {
+    if (!drag) return;
+    drag.classList.remove("dragging"); drag = null;
+    const order = [...list.querySelectorAll(".catrow")].map(r => r.dataset.id);
+    cats.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+    saveCats(); updateCatFilter();
+  };
+  list.addEventListener("pointerup", end); list.addEventListener("pointercancel", end);
+})();
 const catRow = e => { const r = e.target.closest(".catrow"); return r && cats.find(c => c.id === r.dataset.id); };
 $("catList").addEventListener("input", e => {
   const c = catRow(e); if (!c) return;
